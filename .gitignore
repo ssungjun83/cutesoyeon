@@ -1,0 +1,16 @@
+/.venv/
+/__pycache__/
+*.pyc
+.env
+/data/
+!/data/.gitkeep
+
+# 개인 대화/미디어 원본은 업로드 제외(필요하면 규칙 삭제)
+KakaoTalk_*.txt
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# 공유용 터널 바이너리(실행 시 자동 다운로드)
+/tools/cloudflared.exe

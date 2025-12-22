@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>대화 (텍스트)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page">
+    <header class="topbar">
+      <div class="topbar-title">대화 (텍스트)</div>
+      <nav class="topbar-actions">
+        <a class="link" href="{{ url_for('index', view='chat') }}">대화형</a>
+        <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+        <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+      </nav>
+    </header>
+
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flash chat-flash">
+          {% for category, message in flashes %}
+            <div class="flash-item {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <main class="chat">
+      <pre class="log">{{ raw_text or '' }}</pre>
+
+      {% if next_before %}
+        <div class="more">
+          <a class="btn btn-secondary" href="{{ url_for('index', before=next_before, view='txt') }}">이전 대화 더 보기</a>
+        </div>
+      {% endif %}
+    </main>
+  </body>
+</html>

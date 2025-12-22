@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>대화</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page">
+    <header class="topbar">
+      <div class="topbar-title">대화</div>
+      <nav class="topbar-actions">
+        <a class="link" href="{{ url_for('index', view='txt') }}">텍스트 형식</a>
+        <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+        <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+      </nav>
+    </header>
+
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flash chat-flash">
+          {% for category, message in flashes %}
+            <div class="flash-item {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <main class="chat">
+      {% set last_day = None %}
+      {% for m in messages %}
+        {% set day = m.date_key %}
+        {% if day != last_day %}
+          <div class="day-sep">--------------- {{ m.date_ko }} ---------------</div>
+          {% set last_day = day %}
+        {% endif %}
+
+        {% set is_me = (me_name and m.sender == me_name) %}
+        <div class="msg {{ 'me' if is_me else 'other' }}">
+          <div class="meta">
+            <span class="sender">{{ m.sender }}</span>
+            <span class="time">{{ m.time_ko }}</span>
+          </div>
+          <div class="bubble">{{ m.text | e | replace('\n','<br>') | safe }}</div>
+        </div>
+      {% endfor %}
+
+      {% if next_before %}
+        <div class="more">
+          <a class="btn btn-secondary" href="{{ url_for('index', before=next_before, view='chat') }}">이전 대화 더 보기</a>
+        </div>
+      {% endif %}
+    </main>
+  </body>
+</html>

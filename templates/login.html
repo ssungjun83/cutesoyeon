@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>대화 보기 - 로그인</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="page">
+    <div class="card">
+      <h1 class="title">대화 보기</h1>
+      <p class="sub">비밀번호를 입력하세요.</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash">
+            {% for category, message in messages %}
+              <div class="flash-item {{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" action="{{ url_for('login_post') }}">
+        <label class="label">비밀번호</label>
+        <input class="input" type="password" name="password" autofocus required />
+        <button class="btn" type="submit">입장</button>
+      </form>
+    </div>
+  </body>
+</html>
+
