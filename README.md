@@ -35,6 +35,9 @@ GitHub는 **코드를 올리는 곳**이고, 실제로 24시간 실행되는 “
 
 ### Render로 배포(추천)
 
+빠른 시작(원클릭에 가깝게):
+- `https://render.com/deploy?repo=https://github.com/ssungjun83/cutesoyeon`
+
 1. Render 가입/로그인
 2. Blueprint(또는 “New +”)로 이 GitHub 저장소 선택
 3. `CHAT_APP_PASSWORD_HASH`만 입력 (생성: 로컬에서 `.\.venv\Scripts\python tools\hash_password.py`)
