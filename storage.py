@@ -83,7 +83,7 @@ def import_messages_canonicalized(
     source: str | None = None,
     *,
     me_sender: str = "이성준",
-    other_sender: str = "귀여운 소연이",
+    other_sender: str = "귀여운소연이",
 ) -> dict:
     canonical = [
         KakaoMessage(dt=m.dt, sender=_canonicalize_sender(m.sender, me_sender, other_sender), text=m.text)
@@ -96,7 +96,7 @@ def normalize_db_senders_and_dedup(
     db_path: Path,
     *,
     me_sender: str = "이성준",
-    other_sender: str = "귀여운 소연이",
+    other_sender: str = "귀여운소연이",
 ) -> dict:
     """
     Canonicalize sender names and drop any duplicates by rebuilding the messages table.

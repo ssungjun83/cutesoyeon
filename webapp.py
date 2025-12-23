@@ -81,7 +81,7 @@ def create_app() -> Flask:
     )
 
     canonical_me = os.getenv("CHAT_APP_CANONICAL_ME_NAME", "이성준").strip() or "이성준"
-    canonical_other = os.getenv("CHAT_APP_CANONICAL_OTHER_NAME", "귀여운 소연이").strip() or "귀여운 소연이"
+    canonical_other = os.getenv("CHAT_APP_CANONICAL_OTHER_NAME", "귀여운소연이").strip() or "귀여운소연이"
     app.config["CHAT_CANONICAL_ME_NAME"] = canonical_me
     app.config["CHAT_CANONICAL_OTHER_NAME"] = canonical_other
 
