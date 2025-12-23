@@ -14,6 +14,17 @@
         <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
         <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
       </nav>
+      <div class="topbar-tools">
+        <div class="jump">
+          <label class="me-label">날짜 이동</label>
+          <select class="select" id="jump-day">
+            <option value="">(선택)</option>
+            {% for d in days or [] %}
+              <option value="day-{{ d.date_key }}">{{ d.date_ko }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
     </header>
 
     {% with flashes = get_flashed_messages(with_categories=true) %}
@@ -26,14 +37,32 @@
       {% endif %}
     {% endwith %}
 
-    <main class="chat">
-      <pre class="log">{{ raw_text or '' }}</pre>
-
-      {% if next_before %}
-        <div class="more">
-          <a class="btn btn-secondary" href="{{ url_for('index', before=next_before, view='txt') }}">이전 대화 더 보기</a>
-        </div>
-      {% endif %}
+    <main class="chat" id="chat-scroll">
+      <div class="txt-log">
+        {% for d in days or [] %}
+          <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
+          {% for m in d.messages %}
+            <div class="txt-row">[{{ m.sender }}] [{{ m.time_ko }}] {{ m.text }}</div>
+          {% endfor %}
+        {% endfor %}
+      </div>
     </main>
+
+    <script>
+      (function () {
+        var sel = document.getElementById("jump-day");
+        if (sel) {
+          sel.addEventListener("change", function () {
+            if (!sel.value) return;
+            var el = document.getElementById(sel.value);
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+        var chat = document.getElementById("chat-scroll");
+        if (chat && !location.hash) {
+          chat.scrollTop = chat.scrollHeight;
+        }
+      })();
+    </script>
   </body>
 </html>

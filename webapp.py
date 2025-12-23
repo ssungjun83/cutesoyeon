@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import secrets
 from datetime import datetime
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from flask import (
@@ -19,7 +20,7 @@ from flask import (
 from werkzeug.security import check_password_hash
 
 from kakao_parser import parse_kakao_talk_txt
-from storage import fetch_messages, import_messages
+from storage import fetch_messages, fetch_senders, import_messages
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -118,43 +119,67 @@ def create_app() -> Flask:
     @app.get("/")
     def index():
         _require_login()
-        before = request.args.get("before")
         view = request.args.get("view", "chat").strip().lower()
         if view not in ("chat", "txt"):
             view = "chat"
 
-        messages = fetch_messages(DB_PATH, limit=300, before_dt=before)
-        for m in messages:
-            dt = datetime.fromisoformat(m["dt"])
-            m["date_key"] = dt.strftime("%Y-%m-%d")
-            weekday_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][dt.weekday()]
-            m["date_ko"] = f"{dt.year}년 {dt.month}월 {dt.day}일 {weekday_ko}"
-            ampm = "오전" if dt.hour < 12 else "오후"
-            h12 = dt.hour % 12
-            if h12 == 0:
-                h12 = 12
-            m["time_ko"] = f"{ampm} {h12}:{dt.minute:02d}"
+        @dataclass
+        class DayGroup:
+            date_key: str
+            date_ko: str
+            messages: list[dict]
 
-        next_before = messages[0]["dt"] if messages else None
+        me_name = session.get("me_name") or app.config["CHAT_ME_NAME"]
+        raw_messages = fetch_messages(DB_PATH, limit=None, before_dt=None, order="asc")
+        days: list[DayGroup] = []
+        current: DayGroup | None = None
+        for m in raw_messages:
+            dt = datetime.fromisoformat(m["dt"])
+            date_key = dt.strftime("%Y-%m-%d")
+            weekday_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][dt.weekday()]
+            date_ko = f"{dt.year}년 {dt.month}월 {dt.day}일 {weekday_ko}"
+            ampm = "오전" if dt.hour < 12 else "오후"
+            h12 = dt.hour % 12 or 12
+            time_ko = f"{ampm} {h12}:{dt.minute:02d}"
+
+            m["date_key"] = date_key
+            m["date_ko"] = date_ko
+            m["time_ko"] = time_ko
+
+            if current is None or current.date_key != date_key:
+                current = DayGroup(date_key=date_key, date_ko=date_ko, messages=[])
+                days.append(current)
+            current.messages.append(m)
+
         template = "chat_txt.html" if view == "txt" else "chat.html"
         raw_text = None
         if view == "txt":
             parts: list[str] = []
-            last_day: str | None = None
-            for m in messages:
-                if m["date_key"] != last_day:
-                    parts.append(f"--------------- {m['date_ko']} ---------------")
-                    last_day = m["date_key"]
-                parts.append(f"[{m['sender']}] [{m['time_ko']}] {m['text']}")
+            for d in days:
+                parts.append(f"--------------- {d.date_ko} ---------------")
+                for m in d.messages:
+                    parts.append(f"[{m['sender']}] [{m['time_ko']}] {m['text']}")
             raw_text = "\n".join(parts)
+
+        senders = fetch_senders(DB_PATH, limit=80)
         return render_template(
             template,
-            messages=messages,
-            me_name=app.config["CHAT_ME_NAME"],
-            next_before=next_before,
+            days=days,
+            me_name=me_name,
+            senders=senders,
             view=view,
             raw_text=raw_text,
         )
+
+    @app.post("/me")
+    def set_me():
+        _require_login()
+        name = (request.form.get("me_name") or "").strip()
+        if name:
+            session["me_name"] = name
+        else:
+            session.pop("me_name", None)
+        return redirect(url_for("index"))
 
     @app.get("/admin/import")
     def admin_import():

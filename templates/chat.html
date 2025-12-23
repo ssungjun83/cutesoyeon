@@ -14,6 +14,26 @@
         <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
         <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
       </nav>
+      <div class="topbar-tools">
+        <form class="me-form" method="post" action="{{ url_for('set_me') }}">
+          <label class="me-label">오른쪽(나)</label>
+          <select class="select" name="me_name" onchange="this.form.submit()">
+            <option value="">(선택)</option>
+            {% for s in senders or [] %}
+              <option value="{{ s.sender }}" {% if me_name == s.sender %}selected{% endif %}>{{ s.sender }} ({{ s.count }})</option>
+            {% endfor %}
+          </select>
+        </form>
+        <div class="jump">
+          <label class="me-label">날짜 이동</label>
+          <select class="select" id="jump-day">
+            <option value="">(선택)</option>
+            {% for d in days or [] %}
+              <option value="day-{{ d.date_key }}">{{ d.date_ko }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
     </header>
 
     {% with flashes = get_flashed_messages(with_categories=true) %}
@@ -26,30 +46,42 @@
       {% endif %}
     {% endwith %}
 
-    <main class="chat">
-      {% set last_day = None %}
-      {% for m in messages %}
-        {% set day = m.date_key %}
-        {% if day != last_day %}
-          <div class="day-sep">--------------- {{ m.date_ko }} ---------------</div>
-          {% set last_day = day %}
-        {% endif %}
-
-        {% set is_me = (me_name and m.sender == me_name) %}
-        <div class="msg {{ 'me' if is_me else 'other' }}">
-          <div class="meta">
-            <span class="sender">{{ m.sender }}</span>
-            <span class="time">{{ m.time_ko }}</span>
+    <main class="chat" id="chat-scroll">
+      {% for d in days or [] %}
+        <div class="day-sep" id="day-{{ d.date_key }}">--------------- {{ d.date_ko }} ---------------</div>
+        {% for m in d.messages %}
+          {% set is_me = (me_name and m.sender == me_name) %}
+          <div class="msg-row {{ 'me' if is_me else 'other' }}">
+            {% if is_me %}
+              <div class="time">{{ m.time_ko }}</div>
+              <div class="bubble bubble-me">{{ m.text | e | replace('\n','<br>') | safe }}</div>
+            {% else %}
+              <div class="msg-col">
+                <div class="sender">{{ m.sender }}</div>
+                <div class="bubble bubble-other">{{ m.text | e | replace('\n','<br>') | safe }}</div>
+              </div>
+              <div class="time">{{ m.time_ko }}</div>
+            {% endif %}
           </div>
-          <div class="bubble">{{ m.text | e | replace('\n','<br>') | safe }}</div>
-        </div>
+        {% endfor %}
       {% endfor %}
-
-      {% if next_before %}
-        <div class="more">
-          <a class="btn btn-secondary" href="{{ url_for('index', before=next_before, view='chat') }}">이전 대화 더 보기</a>
-        </div>
-      {% endif %}
     </main>
+
+    <script>
+      (function () {
+        var sel = document.getElementById("jump-day");
+        if (sel) {
+          sel.addEventListener("change", function () {
+            if (!sel.value) return;
+            var el = document.getElementById(sel.value);
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+        var chat = document.getElementById("chat-scroll");
+        if (chat && !location.hash) {
+          chat.scrollTop = chat.scrollHeight;
+        }
+      })();
+    </script>
   </body>
 </html>

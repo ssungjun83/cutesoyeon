@@ -72,8 +72,9 @@ def import_messages(db_path: Path, messages: list[KakaoMessage], source: str | N
 
 def fetch_messages(
     db_path: Path,
-    limit: int = 300,
+    limit: int | None = None,
     before_dt: str | None = None,
+    order: str = "asc",
 ) -> list[dict]:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
@@ -83,20 +84,41 @@ def fetch_messages(
         if before_dt:
             where = "WHERE dt < ?"
             params.append(before_dt)
-        params.append(limit)
+
+        order_sql = "ASC" if order.lower() == "asc" else "DESC"
+        limit_sql = ""
+        if limit is not None:
+            limit_sql = "LIMIT ?"
+            params.append(int(limit))
         rows = conn.execute(
             f"""
             SELECT id, dt, sender, text, source, imported_at
             FROM messages
             {where}
-            ORDER BY dt DESC, id DESC
-            LIMIT ?
+            ORDER BY dt {order_sql}, id {order_sql}
+            {limit_sql}
             """,
             params,
         ).fetchall()
     items = [dict(r) for r in rows]
-    items.reverse()
     return items
+
+
+def fetch_senders(db_path: Path, limit: int = 50) -> list[dict]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT sender, COUNT(*) AS count
+            FROM messages
+            GROUP BY sender
+            ORDER BY count DESC, sender ASC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_latest_dt(db_path: Path) -> str | None:
