@@ -28,6 +28,10 @@ DB_PATH = DATA_DIR / "chat.db"
 SECRET_KEY_PATH = DATA_DIR / "secret_key.txt"
 
 
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in ("1", "true", "yes", "y", "on")
+
+
 def _ensure_secret_key() -> str:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if SECRET_KEY_PATH.exists():
@@ -47,6 +51,8 @@ def _decode_uploaded_bytes(data: bytes) -> str:
 
 
 def _require_login() -> None:
+    if session.get("auth_disabled"):
+        return
     if not session.get("logged_in"):
         abort(401)
 
@@ -54,8 +60,9 @@ def _require_login() -> None:
 def create_app() -> Flask:
     load_dotenv(BASE_DIR / ".env", interpolate=False, encoding="utf-8-sig")
 
+    auth_disabled = _is_truthy(os.getenv("CHAT_APP_DISABLE_AUTH", ""))
     password_hash = os.getenv("CHAT_APP_PASSWORD_HASH", "").strip().strip('"').strip("'")
-    if not password_hash:
+    if not auth_disabled and not password_hash:
         raise RuntimeError(
             "CHAT_APP_PASSWORD_HASH가 필요합니다. tools/set_password.py를 실행해 .env를 만든 뒤 다시 실행하세요."
         )
@@ -69,17 +76,30 @@ def create_app() -> Flask:
 
     app.config["CHAT_ME_NAME"] = os.getenv("CHAT_APP_ME", "").strip()
     app.config["CHAT_PASSWORD_HASH"] = password_hash
+    app.config["AUTH_DISABLED"] = auth_disabled
+
+    @app.before_request
+    def _auth_flag_to_session():
+        session["auth_disabled"] = bool(app.config.get("AUTH_DISABLED"))
 
     @app.errorhandler(401)
     def _unauthorized(_err):
+        if app.config.get("AUTH_DISABLED"):
+            return redirect(url_for("index"))
         return redirect(url_for("login", next=request.path))
 
     @app.get("/login")
     def login():
+        if app.config.get("AUTH_DISABLED"):
+            return redirect(url_for("index"))
         return render_template("login.html")
 
     @app.post("/login")
     def login_post():
+        if app.config.get("AUTH_DISABLED"):
+            session["logged_in"] = True
+            session.permanent = True
+            return redirect(url_for("index"))
         password = request.form.get("password", "")
         if not check_password_hash(app.config["CHAT_PASSWORD_HASH"], password):
             flash("비밀번호가 틀렸습니다.", "error")
@@ -91,6 +111,8 @@ def create_app() -> Flask:
     @app.get("/logout")
     def logout():
         session.clear()
+        if app.config.get("AUTH_DISABLED"):
+            return redirect(url_for("index"))
         return redirect(url_for("login"))
 
     @app.get("/")
