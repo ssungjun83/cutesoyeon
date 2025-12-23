@@ -70,6 +70,91 @@ def import_messages(db_path: Path, messages: list[KakaoMessage], source: str | N
     return {"inserted": inserted, "skipped": skipped, "total": len(messages)}
 
 
+def _canonicalize_sender(sender: str, me_sender: str, other_sender: str) -> str:
+    sender = (sender or "").strip()
+    if sender == me_sender:
+        return me_sender
+    return other_sender
+
+
+def import_messages_canonicalized(
+    db_path: Path,
+    messages: list[KakaoMessage],
+    source: str | None = None,
+    *,
+    me_sender: str = "이성준",
+    other_sender: str = "귀여운 소연이",
+) -> dict:
+    canonical = [
+        KakaoMessage(dt=m.dt, sender=_canonicalize_sender(m.sender, me_sender, other_sender), text=m.text)
+        for m in messages
+    ]
+    return import_messages(db_path, canonical, source=source)
+
+
+def normalize_db_senders_and_dedup(
+    db_path: Path,
+    *,
+    me_sender: str = "이성준",
+    other_sender: str = "귀여운 소연이",
+) -> dict:
+    """
+    Canonicalize sender names and drop any duplicates by rebuilding the messages table.
+    Keeps the earliest row per dedup_key (based on ORDER BY dt ASC, id ASC).
+    """
+    init_db(db_path)
+    kept = 0
+    dropped = 0
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
+
+        # Ensure we have a clean destination with the current schema.
+        conn.execute("DROP TABLE IF EXISTS messages_new")
+        conn.executescript(
+            SCHEMA.replace("CREATE TABLE IF NOT EXISTS messages", "CREATE TABLE IF NOT EXISTS messages_new")
+            .replace("idx_messages_dt ON messages", "idx_messages_dt_new ON messages_new")
+        )
+
+        rows = conn.execute(
+            """
+            SELECT dt, sender, text, source
+            FROM messages
+            ORDER BY dt ASC, id ASC
+            """
+        ).fetchall()
+
+        for r in rows:
+            dt_iso = str(r["dt"])
+            dt = datetime.fromisoformat(dt_iso)
+            dt_minute = _dt_minute(dt)
+            sender = _canonicalize_sender(str(r["sender"]), me_sender, other_sender)
+            text = str(r["text"])
+            norm_text = normalize_text_for_dedup(text)
+            key = _dedup_key(dt_minute, norm_text)
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO messages_new
+                (dt, dt_minute, sender, text, norm_text, dedup_key, source)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (dt_iso, dt_minute, sender, text, norm_text, key, r["source"]),
+            )
+            if cur.rowcount == 1:
+                kept += 1
+            else:
+                dropped += 1
+
+        conn.execute("DROP TABLE messages")
+        conn.execute("ALTER TABLE messages_new RENAME TO messages")
+        conn.execute("DROP INDEX IF EXISTS idx_messages_dt_new")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_dt ON messages(dt)")
+        conn.commit()
+
+    return {"kept": kept, "dropped": dropped, "total": kept + dropped}
+
+
 def fetch_messages(
     db_path: Path,
     limit: int | None = None,

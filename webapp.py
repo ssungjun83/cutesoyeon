@@ -20,7 +20,12 @@ from flask import (
 from werkzeug.security import check_password_hash
 
 from kakao_parser import parse_kakao_talk_txt
-from storage import fetch_messages, fetch_senders, import_messages
+from storage import (
+    fetch_messages,
+    fetch_senders,
+    import_messages_canonicalized,
+    normalize_db_senders_and_dedup,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -75,7 +80,12 @@ def create_app() -> Flask:
         SESSION_COOKIE_SAMESITE="Lax",
     )
 
-    app.config["CHAT_ME_NAME"] = os.getenv("CHAT_APP_ME", "").strip()
+    canonical_me = os.getenv("CHAT_APP_CANONICAL_ME_NAME", "이성준").strip() or "이성준"
+    canonical_other = os.getenv("CHAT_APP_CANONICAL_OTHER_NAME", "귀여운 소연이").strip() or "귀여운 소연이"
+    app.config["CHAT_CANONICAL_ME_NAME"] = canonical_me
+    app.config["CHAT_CANONICAL_OTHER_NAME"] = canonical_other
+
+    app.config["CHAT_ME_NAME"] = os.getenv("CHAT_APP_ME", "").strip() or canonical_me
     app.config["CHAT_PASSWORD_HASH"] = password_hash
     app.config["AUTH_DISABLED"] = auth_disabled
 
@@ -210,9 +220,29 @@ def create_app() -> Flask:
             flash("메시지를 찾지 못했습니다. (파일 형식을 확인하세요)", "error")
             return redirect(url_for("admin_import"))
 
-        result = import_messages(DB_PATH, msgs, source=source_label)
+        result = import_messages_canonicalized(
+            DB_PATH,
+            msgs,
+            source=source_label,
+            me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
+            other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
+        )
         flash(
             f"가져오기 완료: {result['inserted']}개 추가, {result['skipped']}개 중복 제외 (총 {result['total']}개 파싱)",
+            "ok",
+        )
+        return redirect(url_for("index"))
+
+    @app.post("/admin/normalize")
+    def admin_normalize():
+        _require_login()
+        result = normalize_db_senders_and_dedup(
+            DB_PATH,
+            me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
+            other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
+        )
+        flash(
+            f"정리 완료: {result['kept']}개 유지, {result['dropped']}개 중복 제거 (총 {result['total']}개 처리)",
             "ok",
         )
         return redirect(url_for("index"))
