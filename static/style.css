@@ -1,5 +1,6 @@
 :root {
-  --bg: #b9cfe6;
+  --bg: #ffffff;
+  --chat-bg: #b9cfe6;
   --card: rgba(255, 255, 255, 0.92);
   --text: #0b1220;
   --muted: rgba(11, 18, 32, 0.62);
@@ -124,6 +125,9 @@ body {
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
+  background: var(--chat-bg);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
 }
 
 .day-sep {
