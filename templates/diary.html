@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>일기</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page">
+    <header class="topbar">
+      <div class="topbar-title">일기</div>
+      <nav class="topbar-actions">
+        <a class="link" href="{{ url_for('index') }}">대화</a>
+        <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+        <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+      </nav>
+    </header>
+
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flash chat-flash">
+          {% for category, message in flashes %}
+            <div class="flash-item {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <main class="diary">
+      <section class="diary-editor">
+        <h2 class="section-title">오늘의 기록</h2>
+        <form method="post" action="{{ url_for('diary_post') }}">
+          <label class="label">날짜</label>
+          <input class="input" type="date" name="entry_date" value="{{ today }}" />
+
+          <label class="label">제목</label>
+          <input class="input" type="text" name="title" placeholder="무제" />
+
+          <label class="label">내용</label>
+          <textarea class="textarea" name="body" rows="8" placeholder="오늘의 기록을 남겨보세요."></textarea>
+
+          <button class="btn" type="submit">저장</button>
+        </form>
+      </section>
+
+      <section class="diary-list">
+        <h2 class="section-title">최근 일기</h2>
+        {% if entries %}
+          {% for entry in entries %}
+            <article class="diary-item">
+              <div class="diary-meta">
+                <div class="diary-date">{{ entry.date_ko }}</div>
+                <div class="diary-title">{{ entry.title }}</div>
+              </div>
+              <div class="diary-body">{{ entry.body_html }}</div>
+            </article>
+          {% endfor %}
+        {% else %}
+          <div class="diary-empty">아직 일기가 없습니다.</div>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

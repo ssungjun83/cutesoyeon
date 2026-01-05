@@ -56,6 +56,21 @@ GitHub는 **코드를 올리는 곳**이고, 실제로 24시간 실행되는 “
 - 같은 파일을 여러 번 올려도 **중복은 자동으로 제외**됩니다.
 - (선택) 가져오기 시 이름을 통일하려면 환경변수 `CHAT_APP_CANONICAL_ME_NAME` / `CHAT_APP_CANONICAL_OTHER_NAME`를 설정하세요. (가져오기 화면의 “기존 데이터 정리”로 과거 데이터도 일괄 적용 가능)
 
+## GitHub 백업 (Render에서 자동 업로드)
+
+Render에서 가져오기/정리를 할 때마다 DB를 텍스트로 내보내서 GitHub에 덮어쓰기 업로드할 수 있습니다.
+
+필요한 환경변수
+- `CHAT_APP_GITHUB_TOKEN`: GitHub PAT (repo 쓰기 권한 필요)
+- `CHAT_APP_GITHUB_REPO`: `owner/repo` 형식 (예: `ssungjun83/cutesoyeon`)
+- `CHAT_APP_GITHUB_BRANCH`: 기본 `main`
+- `CHAT_APP_GITHUB_BACKUP_PREFIX`: 확장자 없는 prefix (예: `backup/chat_export`)
+
+업로드되는 파일(매번 덮어쓰기)
+- `backup/chat_export.txt` (단순 텍스트)
+- `backup/chat_export_kakao.txt` (카카오 원문 스타일)
+- `backup/chat_export.csv`
+
 ## 파일/데이터 위치
 
 - DB: `data/chat.db` (로컬에만 저장)

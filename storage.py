@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_dt ON messages(dt);
+
+CREATE TABLE IF NOT EXISTS diary_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_date TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE INDEX IF NOT EXISTS idx_diary_entries_date ON diary_entries(entry_date);
 """
 
 
@@ -243,4 +253,34 @@ def get_oldest_dt(db_path: Path) -> str | None:
     with sqlite3.connect(db_path) as conn:
         row = conn.execute("SELECT dt FROM messages ORDER BY dt ASC, id ASC LIMIT 1").fetchone()
     return row[0] if row else None
+
+
+def add_diary_entry(db_path: Path, entry_date: str, title: str, body: str) -> int:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO diary_entries (entry_date, title, body)
+            VALUES (?, ?, ?)
+            """,
+            (entry_date, title, body),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def fetch_diary_entries(db_path: Path, limit: int = 200) -> list[dict]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, entry_date, title, body, created_at
+            FROM diary_entries
+            ORDER BY entry_date DESC, id DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+    return [dict(r) for r in rows]
 

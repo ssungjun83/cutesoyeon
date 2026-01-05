@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 from dataclasses import dataclass
 from markupsafe import Markup, escape
 
@@ -20,9 +20,12 @@ from flask import (
 )
 from werkzeug.security import check_password_hash
 
+from backup import maybe_backup_to_github
 from kakao_parser import parse_kakao_talk_txt
 from storage import (
+    add_diary_entry,
     fetch_messages,
+    fetch_diary_entries,
     fetch_senders,
     import_messages_canonicalized,
     normalize_db_senders_and_dedup,
@@ -84,6 +87,11 @@ def _highlight_html(text: str, term: str | None) -> Markup:
         if i < len(parts) - 1:
             out.append(Markup("<mark class=\"hl\">") + _escape_with_br(term) + Markup("</mark>"))
     return Markup("").join(out)
+
+
+def _format_ko_date(value: date) -> str:
+    weekday_ko = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"][value.weekday()]
+    return f"{value.year}년 {value.month}월 {value.day}일 {weekday_ko}"
 
 
 def create_app() -> Flask:
@@ -201,6 +209,50 @@ def create_app() -> Flask:
             search_count=len(raw_messages),
         )
 
+    @app.get("/diary")
+    def diary():
+        _require_login()
+        entries = fetch_diary_entries(DB_PATH, limit=200)
+        for entry in entries:
+            entry_date_raw = str(entry["entry_date"])
+            try:
+                entry_date = date.fromisoformat(entry_date_raw)
+                entry["date_ko"] = _format_ko_date(entry_date)
+            except ValueError:
+                entry["date_ko"] = entry_date_raw
+            entry["body_html"] = _escape_with_br(str(entry["body"] or ""))
+        return render_template(
+            "diary.html",
+            entries=entries,
+            today=date.today().isoformat(),
+        )
+
+    @app.post("/diary")
+    def diary_post():
+        _require_login()
+        entry_date_raw = (request.form.get("entry_date") or "").strip()
+        title = (request.form.get("title") or "").strip()
+        body = (request.form.get("body") or "").strip()
+
+        if not body:
+            flash("내용이 비어있습니다.", "error")
+            return redirect(url_for("diary"))
+
+        if not entry_date_raw:
+            entry_date_raw = date.today().isoformat()
+        try:
+            entry_date = date.fromisoformat(entry_date_raw)
+        except ValueError:
+            flash("날짜 형식이 올바르지 않습니다.", "error")
+            return redirect(url_for("diary"))
+
+        if not title:
+            title = "무제"
+
+        add_diary_entry(DB_PATH, entry_date.isoformat(), title, body)
+        flash("일기를 저장했습니다.", "ok")
+        return redirect(url_for("diary"))
+
     @app.post("/me")
     def set_me():
         _require_login()
@@ -247,6 +299,7 @@ def create_app() -> Flask:
             me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
             other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
         )
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash(
             f"가져오기 완료: {result['inserted']}개 추가, {result['skipped']}개 중복 제외 (총 {result['total']}개 파싱)",
             "ok",
@@ -261,6 +314,7 @@ def create_app() -> Flask:
             me_sender=app.config["CHAT_CANONICAL_ME_NAME"],
             other_sender=app.config["CHAT_CANONICAL_OTHER_NAME"],
         )
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash(
             f"정리 완료: {result['kept']}개 유지, {result['dropped']}개 중복 제거 (총 {result['total']}개 처리)",
             "ok",

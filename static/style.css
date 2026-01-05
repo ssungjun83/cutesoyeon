@@ -196,3 +196,40 @@ body {
   padding: 12px;
 }
 .txt-row { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+
+.diary {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 12px 20px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+.diary-editor {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  margin-bottom: 16px;
+}
+.section-title { margin: 0 0 10px 0; font-size: 15px; }
+.diary-list { display: flex; flex-direction: column; gap: 12px; }
+.diary-item {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+}
+.diary-meta { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.diary-date { font-size: 12px; color: var(--muted); }
+.diary-title { font-weight: 700; }
+.diary-body { line-height: 1.6; }
+.diary-empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
