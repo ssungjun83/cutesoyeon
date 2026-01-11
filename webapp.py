@@ -186,6 +186,7 @@ def create_app() -> Flask:
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_PERMANENT=False,
     )
 
     canonical_me = os.getenv("CHAT_APP_CANONICAL_ME_NAME", "이성준").strip() or "이성준"
@@ -200,6 +201,14 @@ def create_app() -> Flask:
     @app.before_request
     def _auth_flag_to_session():
         session["auth_disabled"] = bool(app.config.get("AUTH_DISABLED"))
+
+    @app.after_request
+    def _clear_login_after_response(response):
+        if app.config.get("AUTH_DISABLED"):
+            return response
+        if session.get("logged_in") and response.status_code not in {301, 302, 303, 307, 308}:
+            session.pop("logged_in", None)
+        return response
 
     @app.errorhandler(401)
     def _unauthorized(_err):
@@ -217,14 +226,12 @@ def create_app() -> Flask:
     def login_post():
         if app.config.get("AUTH_DISABLED"):
             session["logged_in"] = True
-            session.permanent = True
             return redirect(url_for("index"))
         password = request.form.get("password", "")
         if not check_password_hash(app.config["CHAT_PASSWORD_HASH"], password):
             flash("비밀번호가 틀렸습니다.", "error")
             return redirect(url_for("login"))
         session["logged_in"] = True
-        session.permanent = True
         return redirect(url_for("index"))
 
     @app.get("/logout")
