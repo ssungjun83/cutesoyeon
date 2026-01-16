@@ -341,6 +341,8 @@ def create_app() -> Flask:
     @app.get("/")
     def index():
         _require_login()
+        if not request.args:
+            return redirect(url_for("diary"))
         view = request.args.get("view", "chat").strip().lower()
         if view not in ("chat", "txt"):
             view = "chat"
