@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 import csv
 import hashlib
 import io
 import sqlite3
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from kakao_parser import KakaoMessage, normalize_text_for_dedup
 
@@ -60,7 +61,15 @@ CREATE TABLE IF NOT EXISTS memories_photos (
 
 CREATE INDEX IF NOT EXISTS idx_memories_photos_date ON memories_photos(taken_date);
 CREATE INDEX IF NOT EXISTS idx_memories_photos_album ON memories_photos(album);
+
+CREATE TABLE IF NOT EXISTS app_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 """
+
+SEOUL_TZ = ZoneInfo("Asia/Seoul")
+DIARY_TZ_META_KEY = "diary_tz_seoul_v1"
 
 
 def _dt_minute(dt: datetime) -> str:
@@ -70,6 +79,87 @@ def _dt_minute(dt: datetime) -> str:
 def _dedup_key(dt_minute: str, norm_text: str) -> str:
     raw = f"{dt_minute}\n{norm_text}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d").date()
+        return datetime(d.year, d.month, d.day)
+    except ValueError:
+        return None
+
+
+def _format_timestamp(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _now_seoul_timestamp() -> str:
+    return _format_timestamp(datetime.now(SEOUL_TZ))
+
+
+def _utc_to_seoul_timestamp(value: str) -> str:
+    dt = _parse_timestamp(value)
+    if not dt:
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return _format_timestamp(dt.astimezone(SEOUL_TZ))
+
+
+def migrate_diary_timezone_seoul(db_path: Path) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        existing = conn.execute(
+            "SELECT value FROM app_meta WHERE key = ? LIMIT 1",
+            (DIARY_TZ_META_KEY,),
+        ).fetchone()
+        if existing:
+            return False
+
+        conn.execute("BEGIN")
+        entry_rows = conn.execute("SELECT id, created_at FROM diary_entries").fetchall()
+        for row in entry_rows:
+            created_at = str(row["created_at"] or "").strip()
+            if not created_at:
+                continue
+            converted = _utc_to_seoul_timestamp(created_at)
+            if converted != created_at:
+                conn.execute(
+                    "UPDATE diary_entries SET created_at = ? WHERE id = ?",
+                    (converted, int(row["id"])),
+                )
+
+        comment_rows = conn.execute("SELECT id, created_at FROM diary_comments").fetchall()
+        for row in comment_rows:
+            created_at = str(row["created_at"] or "").strip()
+            if not created_at:
+                continue
+            converted = _utc_to_seoul_timestamp(created_at)
+            if converted != created_at:
+                conn.execute(
+                    "UPDATE diary_comments SET created_at = ? WHERE id = ?",
+                    (converted, int(row["id"])),
+                )
+
+        conn.execute(
+            "INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)",
+            (DIARY_TZ_META_KEY, _now_seoul_timestamp()),
+        )
+        conn.commit()
+    return True
 
 
 def init_db(db_path: Path) -> None:
@@ -284,13 +374,14 @@ def get_oldest_dt(db_path: Path) -> str | None:
 
 def add_diary_entry(db_path: Path, entry_date: str, title: str, body: str) -> int:
     init_db(db_path)
+    created_at = _now_seoul_timestamp()
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
             """
-            INSERT INTO diary_entries (entry_date, title, body)
-            VALUES (?, ?, ?)
+            INSERT INTO diary_entries (entry_date, title, body, created_at)
+            VALUES (?, ?, ?, ?)
             """,
-            (entry_date, title, body),
+            (entry_date, title, body, created_at),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -304,6 +395,7 @@ def upsert_diary_entry(
     created_at: str | None = None,
 ) -> tuple[int, bool] | None:
     init_db(db_path)
+    created_at_value = created_at or _now_seoul_timestamp()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
@@ -328,10 +420,10 @@ def upsert_diary_entry(
         else:
             cur = conn.execute(
                 """
-                INSERT INTO diary_entries (entry_date, title, body)
-                VALUES (?, ?, ?)
+                INSERT INTO diary_entries (entry_date, title, body, created_at)
+                VALUES (?, ?, ?, ?)
                 """,
-                (entry_date, title, body),
+                (entry_date, title, body, created_at_value),
             )
         conn.commit()
         return int(cur.lastrowid), True
@@ -421,13 +513,14 @@ def delete_diary_entry(db_path: Path, entry_id: int) -> bool:
 
 def add_diary_comment(db_path: Path, entry_id: int, body: str) -> int:
     init_db(db_path)
+    created_at = _now_seoul_timestamp()
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute(
             """
-            INSERT INTO diary_comments (entry_id, body)
-            VALUES (?, ?)
+            INSERT INTO diary_comments (entry_id, body, created_at)
+            VALUES (?, ?, ?)
             """,
-            (int(entry_id), body),
+            (int(entry_id), body, created_at),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -440,6 +533,7 @@ def upsert_diary_comment(
     created_at: str | None = None,
 ) -> bool:
     init_db(db_path)
+    created_at_value = created_at or _now_seoul_timestamp()
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         if created_at:
@@ -475,10 +569,10 @@ def upsert_diary_comment(
         else:
             conn.execute(
                 """
-                INSERT INTO diary_comments (entry_id, body)
-                VALUES (?, ?)
+                INSERT INTO diary_comments (entry_id, body, created_at)
+                VALUES (?, ?, ?)
                 """,
-                (int(entry_id), body),
+                (int(entry_id), body, created_at_value),
             )
         conn.commit()
         return True

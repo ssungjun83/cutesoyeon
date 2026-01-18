@@ -100,7 +100,7 @@
           {% for entry in entries %}
             <article class="diary-item">
               <div class="diary-meta">
-                <div class="diary-date">{{ entry.date_ko }}</div>
+                <div class="diary-date">{{ entry.date_ko }}{% if entry.time_ko %} / {{ entry.time_ko }}{% endif %}</div>
                 <div class="diary-title">{{ entry.title }}</div>
               </div>
               <div class="diary-body">{{ entry.body_html }}</div>

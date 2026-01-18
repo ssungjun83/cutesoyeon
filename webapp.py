@@ -8,6 +8,7 @@ import secrets
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass
 from markupsafe import Markup, escape
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from flask import (
@@ -74,6 +75,7 @@ from storage import (
     update_diary_entry,
     upsert_diary_comment,
     upsert_diary_entry,
+    migrate_diary_timezone_seoul,
     add_memory_photo,
     update_memory_photo,
     delete_memory_photo,
@@ -86,6 +88,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("CHAT_APP_DATA_DIR", "")).expanduser().resolve() if os.getenv("CHAT_APP_DATA_DIR") else (BASE_DIR / "data")
 DB_PATH = DATA_DIR / "chat.db"
 SECRET_KEY_PATH = DATA_DIR / "secret_key.txt"
+SEOUL_TZ = ZoneInfo("Asia/Seoul")
 
 
 def _is_truthy(value: str) -> bool:
@@ -157,11 +160,41 @@ def _format_comment_ts(value: str) -> str:
     raw = (value or "").strip()
     if not raw:
         return ""
-    try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError:
+    parsed = _parse_timestamp(raw)
+    if not parsed:
         return raw
+    if parsed.tzinfo:
+        parsed = parsed.astimezone(SEOUL_TZ)
     return parsed.strftime("%Y-%m-%d %H:%M")
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    try:
+        d = datetime.strptime(raw, "%Y-%m-%d").date()
+        return datetime(d.year, d.month, d.day)
+    except ValueError:
+        return None
+
+
+def _format_entry_time(value: str) -> str:
+    parsed = _parse_timestamp(value)
+    if not parsed:
+        return ""
+    if parsed.tzinfo:
+        parsed = parsed.astimezone(SEOUL_TZ)
+    return parsed.strftime("%H:%M")
 
 
 def _diary_redirect_args(form) -> dict[str, str]:
@@ -278,6 +311,7 @@ def create_app() -> Flask:
     app.config["CHAT_ME_NAME"] = os.getenv("CHAT_APP_ME", "").strip() or canonical_me
     app.config["CHAT_PASSWORD_HASH"] = password_hash
     app.config["AUTH_DISABLED"] = auth_disabled
+    migrate_diary_timezone_seoul(DB_PATH)
 
     def _download_response(content: str, content_type: str, filename: str):
         resp = make_response(content)
@@ -434,6 +468,7 @@ def create_app() -> Flask:
             except ValueError:
                 entry["date_ko"] = entry_date_raw
             entry["body_html"] = _escape_with_br(str(entry["body"] or ""))
+            entry["time_ko"] = _format_entry_time(str(entry.get("created_at") or ""))
             comments = comments_by_entry.get(entry["id"], [])
             for comment in comments:
                 comment["body_html"] = _escape_with_br(str(comment.get("body") or ""))
