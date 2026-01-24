@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS diary_comments (
 
 CREATE INDEX IF NOT EXISTS idx_diary_comments_entry ON diary_comments(entry_id);
 
+CREATE TABLE IF NOT EXISTS diary_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_id INTEGER NOT NULL,
+  drive_file_id TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  mime_type TEXT,
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+CREATE INDEX IF NOT EXISTS idx_diary_photos_entry ON diary_photos(entry_id);
+
 CREATE TABLE IF NOT EXISTS memories_photos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   drive_file_id TEXT NOT NULL UNIQUE,
@@ -506,6 +517,7 @@ def delete_diary_entry(db_path: Path, entry_id: int) -> bool:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         conn.execute("DELETE FROM diary_comments WHERE entry_id = ?", (int(entry_id),))
+        conn.execute("DELETE FROM diary_photos WHERE entry_id = ?", (int(entry_id),))
         cur = conn.execute("DELETE FROM diary_entries WHERE id = ?", (int(entry_id),))
         conn.commit()
         return cur.rowcount == 1
@@ -606,6 +618,75 @@ def delete_diary_comment(db_path: Path, comment_id: int) -> bool:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         cur = conn.execute("DELETE FROM diary_comments WHERE id = ?", (int(comment_id),))
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def add_diary_photo(
+    db_path: Path,
+    *,
+    entry_id: int,
+    drive_file_id: str,
+    file_name: str,
+    mime_type: str | None = None,
+) -> int:
+    init_db(db_path)
+    created_at = _now_seoul_timestamp()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO diary_photos (entry_id, drive_file_id, file_name, mime_type, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (int(entry_id), drive_file_id, file_name, mime_type, created_at),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def fetch_diary_photos(db_path: Path, entry_ids: list[int]) -> dict[int, list[dict]]:
+    init_db(db_path)
+    if not entry_ids:
+        return {}
+    ids = [int(entry_id) for entry_id in entry_ids]
+    placeholders = ", ".join("?" for _ in ids)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"""
+            SELECT id, entry_id, drive_file_id, file_name, mime_type, created_at
+            FROM diary_photos
+            WHERE entry_id IN ({placeholders})
+            ORDER BY entry_id ASC, id ASC
+            """,
+            ids,
+        ).fetchall()
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        entry_id = int(row["entry_id"])
+        grouped.setdefault(entry_id, []).append(dict(row))
+    return grouped
+
+
+def get_diary_photo(db_path: Path, photo_id: int) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT id, entry_id, drive_file_id, file_name, mime_type, created_at
+            FROM diary_photos
+            WHERE id = ?
+            """,
+            (int(photo_id),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_diary_photo(db_path: Path, photo_id: int) -> bool:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute("DELETE FROM diary_photos WHERE id = ?", (int(photo_id),))
         conn.commit()
         return cur.rowcount == 1
 

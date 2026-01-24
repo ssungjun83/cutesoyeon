@@ -55,15 +55,19 @@ from kakao_parser import parse_kakao_talk_txt
 from storage import (
     add_diary_entry,
     add_diary_comment,
+    add_diary_photo,
     delete_diary_entry,
     delete_diary_comment,
+    delete_diary_photo,
     fetch_diary_comments,
     fetch_diary_entries,
+    fetch_diary_photos,
     fetch_messages,
     fetch_memory_albums,
     fetch_memory_photos,
     fetch_senders,
     get_diary_entry,
+    get_diary_photo,
     import_messages,
     import_messages_canonicalized,
     get_memory_photo,
@@ -237,6 +241,49 @@ def _split_tags(tags: str) -> list[str]:
         return []
     parts = [part.strip() for part in raw.split(",")]
     return [part for part in parts if part]
+
+
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif")
+
+
+def _is_image_upload(file_storage) -> bool:
+    mime_type = (file_storage.mimetype or "").lower()
+    if mime_type.startswith("image/"):
+        return True
+    name = (file_storage.filename or "").lower()
+    return any(name.endswith(ext) for ext in _IMAGE_EXTENSIONS)
+
+
+def _upload_diary_photos(entry_id: int, files) -> int:
+    if not files:
+        return 0
+    try:
+        folder_id = get_drive_folder_id()
+    except DriveConfigError as exc:
+        flash(str(exc), "error")
+        return 0
+
+    uploaded = 0
+    for file_storage in files:
+        if not file_storage or not file_storage.filename:
+            continue
+        if not _is_image_upload(file_storage):
+            flash(f"이미지 파일만 업로드할 수 있어요: {file_storage.filename}", "error")
+            continue
+        try:
+            created = upload_drive_file(file_storage, folder_id)
+        except Exception:
+            flash(f"사진 업로드에 실패했습니다: {file_storage.filename}", "error")
+            continue
+        add_diary_photo(
+            DB_PATH,
+            entry_id=entry_id,
+            drive_file_id=created.file_id,
+            file_name=created.name,
+            mime_type=created.mime_type,
+        )
+        uploaded += 1
+    return uploaded
 
 
 def _csv_header_fields(text: str) -> set[str]:
@@ -450,6 +497,7 @@ def create_app() -> Flask:
             order="desc",
         )
         comments_by_entry = fetch_diary_comments(DB_PATH, [entry["id"] for entry in entries])
+        photos_by_entry = fetch_diary_photos(DB_PATH, [entry["id"] for entry in entries])
         editing = None
         if edit_id_raw.isdigit():
             editing = get_diary_entry(DB_PATH, int(edit_id_raw))
@@ -474,6 +522,8 @@ def create_app() -> Flask:
                 comment["body_html"] = _escape_with_br(str(comment.get("body") or ""))
                 comment["created_at_display"] = _format_comment_ts(str(comment.get("created_at") or ""))
             entry["comments"] = comments
+            entry["photos"] = photos_by_entry.get(entry["id"], [])
+        drive_ready, drive_hint = get_drive_config_status()
         return render_template(
             "diary.html",
             entries=entries,
@@ -482,6 +532,8 @@ def create_app() -> Flask:
             search_query=q,
             start_date=start_date.isoformat() if start_date else start_date_raw,
             end_date=end_date.isoformat() if end_date else end_date_raw,
+            drive_ready=drive_ready,
+            drive_hint=drive_hint,
         )
 
     @app.post("/diary")
@@ -490,6 +542,7 @@ def create_app() -> Flask:
         entry_date_raw = (request.form.get("entry_date") or "").strip()
         title = (request.form.get("title") or "").strip()
         body = (request.form.get("body") or "").strip()
+        files = [file for file in request.files.getlist("photos") if file and file.filename]
 
         if not body:
             flash("내용이 비어있습니다.", "error")
@@ -505,7 +558,10 @@ def create_app() -> Flask:
         if not title:
             title = "무제"
 
-        add_diary_entry(DB_PATH, entry_date.isoformat(), title, body)
+        entry_id = add_diary_entry(DB_PATH, entry_date.isoformat(), title, body)
+        uploaded = _upload_diary_photos(entry_id, files)
+        if uploaded:
+            flash(f"사진 {uploaded}장 업로드 완료.", "ok")
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("일기를 저장했습니다.", "ok")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
@@ -542,6 +598,7 @@ def create_app() -> Flask:
         entry_date_raw = (request.form.get("entry_date") or "").strip()
         title = (request.form.get("title") or "").strip()
         body = (request.form.get("body") or "").strip()
+        files = [file for file in request.files.getlist("photos") if file and file.filename]
 
         if not body:
             flash("내용이 비어있습니다.", "error")
@@ -562,6 +619,9 @@ def create_app() -> Flask:
             flash("수정할 일기를 찾지 못했습니다.", "error")
             return redirect(url_for("diary", **_diary_redirect_args(request.form)))
 
+        uploaded = _upload_diary_photos(entry_id, files)
+        if uploaded:
+            flash(f"사진 {uploaded}장 업로드 완료.", "ok")
         maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
         flash("일기를 수정했습니다.", "ok")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
@@ -569,13 +629,54 @@ def create_app() -> Flask:
     @app.post("/diary/<int:entry_id>/delete")
     def diary_delete_post(entry_id: int):
         _require_login()
+        photos = fetch_diary_photos(DB_PATH, [entry_id]).get(entry_id, [])
         deleted = delete_diary_entry(DB_PATH, entry_id)
         if deleted:
+            for photo in photos:
+                drive_file_id = str(photo.get("drive_file_id") or "")
+                if not drive_file_id:
+                    continue
+                try:
+                    delete_drive_file(drive_file_id)
+                except Exception:
+                    flash(f"사진 삭제 실패: {photo.get('file_name') or drive_file_id}", "error")
             maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
             flash("일기를 삭제했습니다.", "ok")
         else:
             flash("삭제할 일기를 찾지 못했습니다.", "error")
         return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.post("/diary/photos/<int:photo_id>/delete")
+    def diary_photo_delete(photo_id: int):
+        _require_login()
+        photo = get_diary_photo(DB_PATH, photo_id)
+        if not photo:
+            flash("삭제할 사진을 찾지 못했습니다.", "error")
+            return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+        deleted = delete_diary_photo(DB_PATH, photo_id)
+        if deleted:
+            drive_file_id = str(photo.get("drive_file_id") or "")
+            if drive_file_id:
+                try:
+                    delete_drive_file(drive_file_id)
+                except Exception:
+                    flash("Drive에서 사진 삭제에 실패했습니다.", "error")
+            maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+            flash("사진을 삭제했습니다.", "ok")
+        else:
+            flash("삭제할 사진을 찾지 못했습니다.", "error")
+        return redirect(url_for("diary", **_diary_redirect_args(request.form)))
+
+    @app.get("/diary/media/<file_id>")
+    def diary_media(file_id: str):
+        _require_login()
+        try:
+            content, mime_type = download_drive_file(file_id)
+        except DriveConfigError:
+            abort(404)
+        except Exception:
+            abort(404)
+        return send_file(io.BytesIO(content), mimetype=mime_type)
 
     @app.get("/diary/export")
     def diary_export():
