@@ -57,6 +57,15 @@ CREATE TABLE IF NOT EXISTS diary_photos (
 
 CREATE INDEX IF NOT EXISTS idx_diary_photos_entry ON diary_photos(entry_id);
 
+CREATE TABLE IF NOT EXISTS todo_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_todo_items_completed ON todo_items(completed_at);
+
 CREATE TABLE IF NOT EXISTS memories_photos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   drive_file_id TEXT NOT NULL UNIQUE,
@@ -620,6 +629,60 @@ def delete_diary_comment(db_path: Path, comment_id: int) -> bool:
         cur = conn.execute("DELETE FROM diary_comments WHERE id = ?", (int(comment_id),))
         conn.commit()
         return cur.rowcount == 1
+
+
+def add_todo_item(db_path: Path, body: str) -> int:
+    init_db(db_path)
+    created_at = _now_seoul_timestamp()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO todo_items (body, created_at)
+            VALUES (?, ?)
+            """,
+            (body, created_at),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def complete_todo_item(db_path: Path, item_id: int, completed_at: str | None = None) -> bool:
+    init_db(db_path)
+    completed_value = completed_at or _now_seoul_timestamp()
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """
+            UPDATE todo_items
+            SET completed_at = ?
+            WHERE id = ? AND completed_at IS NULL
+            """,
+            (completed_value, int(item_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+def fetch_todo_items(db_path: Path) -> tuple[list[dict], list[dict]]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        pending_rows = conn.execute(
+            """
+            SELECT id, body, created_at, completed_at
+            FROM todo_items
+            WHERE completed_at IS NULL
+            ORDER BY created_at ASC, id ASC
+            """
+        ).fetchall()
+        done_rows = conn.execute(
+            """
+            SELECT id, body, created_at, completed_at
+            FROM todo_items
+            WHERE completed_at IS NOT NULL
+            ORDER BY completed_at DESC, id DESC
+            """
+        ).fetchall()
+    return ([dict(r) for r in pending_rows], [dict(r) for r in done_rows])
 
 
 def add_diary_photo(

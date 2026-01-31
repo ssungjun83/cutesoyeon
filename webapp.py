@@ -58,12 +58,15 @@ from storage import (
     delete_diary_entry,
     delete_diary_comment,
     delete_diary_photo,
+    add_todo_item,
+    complete_todo_item,
     fetch_diary_comments,
     fetch_diary_entries,
     fetch_diary_photos,
     fetch_messages,
     fetch_memory_albums,
     fetch_memory_photos,
+    fetch_todo_items,
     fetch_senders,
     get_diary_entry,
     get_diary_photo,
@@ -661,6 +664,39 @@ def create_app() -> Flask:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"diary_export_{stamp}.{ext}"
         return _download_response(content, content_type, filename)
+
+    @app.get("/todo")
+    def todo():
+        _require_login()
+        pending, done = fetch_todo_items(DB_PATH)
+        for item in pending:
+            item["body_html"] = _escape_with_br(str(item.get("body") or ""))
+        for item in done:
+            item["body_html"] = _escape_with_br(str(item.get("body") or ""))
+            item["completed_at_display"] = _format_comment_ts(str(item.get("completed_at") or ""))
+        return render_template(
+            "todo.html",
+            pending=pending,
+            done=done,
+        )
+
+    @app.post("/todo")
+    def todo_post():
+        _require_login()
+        body = (request.form.get("body") or "").strip()
+        if not body:
+            flash("내용이 비어있습니다.", "error")
+            return redirect(url_for("todo"))
+        add_todo_item(DB_PATH, body)
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        return redirect(url_for("todo"))
+
+    @app.post("/todo/<int:item_id>/complete")
+    def todo_complete(item_id: int):
+        _require_login()
+        complete_todo_item(DB_PATH, item_id)
+        maybe_backup_to_github(DB_PATH, BASE_DIR, logger=app.logger)
+        return redirect(url_for("todo"))
 
     @app.get("/memories")
     def memories():

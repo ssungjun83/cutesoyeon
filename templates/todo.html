@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>할거</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body class="chat-page todo-page">
+    <header class="topbar">
+      <div class="topbar-title">할거</div>
+      <nav class="topbar-actions">
+        <div class="nav-tabs">
+          <a class="tab" href="{{ url_for('diary') }}">일기</a>
+          <a class="tab" href="{{ url_for('index', view='chat') }}">대화</a>
+          <a class="tab is-active" href="{{ url_for('todo') }}">할거</a>
+          <a class="tab" href="{{ url_for('memories') }}">추억</a>
+        </div>
+        <div class="nav-links">
+          <a class="link" href="{{ url_for('admin_import') }}">가져오기</a>
+          <a class="link" href="{{ url_for('admin_export') }}">내보내기</a>
+          <a class="link" href="{{ url_for('logout') }}">로그아웃</a>
+        </div>
+      </nav>
+    </header>
+
+    {% with flashes = get_flashed_messages(with_categories=true) %}
+      {% if flashes %}
+        <div class="flash chat-flash">
+          {% for category, message in flashes %}
+            <div class="flash-item {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <main class="todo">
+      <section class="todo-card">
+        <h2 class="section-title">소연 ♡ 성준</h2>
+        <form class="todo-form" method="post" action="{{ url_for('todo_post') }}">
+          <label class="label">할 일</label>
+          <div class="todo-form-row">
+            <input class="input" type="text" name="body" placeholder="앞으로 할 일을 적어주세요." />
+            <button class="btn btn-secondary" type="submit">추가</button>
+          </div>
+        </form>
+        <div class="todo-list">
+          {% if pending %}
+            {% for item in pending %}
+              <form class="todo-item" method="post" action="{{ url_for('todo_complete', item_id=item.id) }}">
+                <label class="todo-check">
+                  <input type="checkbox" onchange="this.form.submit()" />
+                  <span class="todo-text">{{ item.body_html }}</span>
+                </label>
+              </form>
+            {% endfor %}
+          {% else %}
+            <div class="todo-empty">아직 적어둔 할 일이 없습니다.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="todo-card">
+        <h2 class="section-title">사랑해</h2>
+        <div class="todo-list">
+          {% if done %}
+            {% for item in done %}
+              <div class="todo-item done">
+                <div class="todo-text">{{ item.body_html }}</div>
+                <div class="todo-time">{{ item.completed_at_display }}</div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="todo-empty">완료된 일이 아직 없습니다.</div>
+          {% endif %}
+        </div>
+      </section>
+    </main>
+
+    {% include "_auth_guard.html" %}
+  </body>
+</html>
